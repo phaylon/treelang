@@ -377,18 +377,18 @@ fn sections() {
 
     let node = assert_matches!(&tree[..], [node] => node);
     let item = &node.directive().unwrap().signature[1];
-    assert_eq!(source.span_section(item.location).to_string(), normalize("
+    assert_eq!(source.span_section_display(item.location).to_string(), normalize("
         | 1 | test abc:
         |   |      ^^^
     "));
-    assert_eq!(source.offset_section(item.location).to_string(), normalize("
+    assert_eq!(source.offset_section_display(item.location).to_string(), normalize("
         | 1 | test abc:
         |   |      ^
     "));
 
     let node = assert_matches!(node.children(), [node] => node);
     let item = &node.directive().unwrap().signature[1];
-    assert_eq!(source.span_section(item.location).to_string(), normalize("
+    assert_eq!(source.span_section_display(item.location).to_string(), normalize("
         | 1 | test abc:
         | 2 |   test def:
         |   |        ^^^
@@ -396,7 +396,7 @@ fn sections() {
 
     let node = assert_matches!(node.children(), [node] => node);
     let item = &node.directive().unwrap().signature[1];
-    assert_eq!(source.span_section(item.location).to_string(), normalize("
+    assert_eq!(source.span_section_display(item.location).to_string(), normalize("
         | 1 | ...
         | 2 |   test def:
         | 3 |     test ghi:

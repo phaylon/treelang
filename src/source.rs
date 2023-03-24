@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 
+/// A position in the source content passed to [`Tree::parse`](crate::Tree::parse).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Offset {
     byte: usize,
@@ -24,6 +25,7 @@ impl Offset {
         Span { offset: *self, len }
     }
 
+    /// The line number this offset is on.
     pub fn line_number(&self) -> usize {
         self.line_number
     }
@@ -35,6 +37,7 @@ impl From<Span> for Offset {
     }
 }
 
+/// A span in the source content passed to [`Tree::parse`](crate::Tree::parse).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     offset: Offset,
@@ -42,18 +45,23 @@ pub struct Span {
 }
 
 impl Span {
+    /// The [`Offset`] this span starts at.
     pub fn offset(&self) -> Offset {
         self.offset
     }
 
+    /// The line number this span is on.
     pub fn line_number(&self) -> usize {
         self.offset.line_number
     }
 }
 
+/// Source content access via [`Offset`] and [`Span`] locations.
 pub trait SourceContext {
+    /// The full source content.
     fn full_str(&self) -> &str;
 
+    /// Try to find the [`Span`] for the line before the one a given [`Offset`] is on.
     fn line_span_before<T>(&self, offset: T) -> Option<Span>
     where
         T: Into<Offset>,
@@ -70,6 +78,7 @@ pub trait SourceContext {
         }
     }
 
+    /// Find the [`Span`] for the line a given [`Offset`] is on.
     fn line_span<T>(&self, offset: T) -> Span
     where
         T: Into<Offset>,
@@ -88,10 +97,12 @@ pub trait SourceContext {
         }
     }
 
+    /// Find the contents of a [`Span`].
     fn span_str(&self, span: Span) -> &str {
         &self.full_str()[span.offset.byte..(span.offset.byte + span.len)]
     }
 
+    /// Find the contents of the line a given [`Offset`] is on.
     fn line_str<T>(&self, offset: T) -> &str
     where
         T: Into<Offset>,
@@ -99,6 +110,7 @@ pub trait SourceContext {
         self.span_str(self.line_span(offset))
     }
 
+    /// Find the line-local byte column of a given [`Offset`].
     fn byte_offset_on_line<T>(&self, offset: T) -> usize
     where
         T: Into<Offset>,
@@ -107,36 +119,44 @@ pub trait SourceContext {
         offset.byte - self.line_span(offset).offset.byte
     }
 
-    fn offset_highlight_line(&self, offset: Offset) -> Highlight<'_> {
+    /// Create a [`HighlightDisplay`] for the line the given [`Offset`] is on
+    /// indicating the offset location.
+    fn offset_highlight_display(&self, offset: Offset) -> HighlightDisplay<'_> {
         let byte_offset = self.byte_offset_on_line(offset);
         let lead_template = &self.line_str(offset)[..byte_offset];
-        Highlight { lead_template, len: 1 }
+        HighlightDisplay { lead_template, len: 1 }
     }
 
-    fn span_highlight_line(&self, span: Span) -> Highlight<'_> {
+    /// Create a [`HighlightDisplay`] for the line the given [`Span`] is on
+    /// indicating the span location.
+    fn span_highlight_display(&self, span: Span) -> HighlightDisplay<'_> {
         let byte_offset = self.byte_offset_on_line(span);
         let lead_template = &self.line_str(span)[..byte_offset];
         let len = self.span_str(span).chars().count();
-        Highlight { lead_template, len }
+        HighlightDisplay { lead_template, len }
     }
 
-    fn offset_section<T>(&self, offset: T) -> Section<'_>
+    /// Create a [`SectionDisplay`] for the given [`Offset`] indicating the offset
+    /// location.
+    fn offset_section_display<T>(&self, offset: T) -> SectionDisplay<'_>
     where
         T: Into<Offset>,
     {
         let offset = offset.into();
-        Section {
+        SectionDisplay {
             full_source_contest: self.full_str(),
             line_span: self.line_span(offset),
-            highlight: self.offset_highlight_line(offset),
+            highlight: self.offset_highlight_display(offset),
         }
     }
 
-    fn span_section(&self, span: Span) -> Section<'_> {
-        Section {
+    /// Create a [`SectionDisplay`] for the given [`Span`] indicating the span
+    /// location.
+    fn span_section_display(&self, span: Span) -> SectionDisplay<'_> {
+        SectionDisplay {
             full_source_contest: self.full_str(),
             line_span: self.line_span(span),
-            highlight: self.span_highlight_line(span),
+            highlight: self.span_highlight_display(span),
         }
     }
 }
@@ -153,14 +173,16 @@ impl SourceContext for String {
     }
 }
 
+/// Used to [`Display`](std::fmt::Display) a section of content corresponding to a
+/// [`Span`] or [`Offset`] with a [`HighlightDisplay`] line.
 #[derive(Debug, Clone, Copy)]
-pub struct Section<'a> {
+pub struct SectionDisplay<'a> {
     full_source_contest: &'a str,
     line_span: Span,
-    highlight: Highlight<'a>,
+    highlight: HighlightDisplay<'a>,
 }
 
-impl<'a> std::fmt::Display for Section<'a> {
+impl<'a> std::fmt::Display for SectionDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let previous_line_span = self.full_source_contest.line_span_before(self.line_span);
 
@@ -197,13 +219,15 @@ fn count_digits(mut n: usize) -> usize {
     }
 }
 
+/// Used to [`Display`](std::fmt::Display) a highlight line corresponding to a
+/// [`Span`] or [`Offset`].
 #[derive(Debug, Clone, Copy)]
-pub struct Highlight<'a> {
+pub struct HighlightDisplay<'a> {
     lead_template: &'a str,
     len: usize,
 }
 
-impl<'a> std::fmt::Display for Highlight<'a> {
+impl<'a> std::fmt::Display for HighlightDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for c in self.lead_template.chars() {
             f.write_char(match c { '\t' => '\t', _ => ' ' })?;

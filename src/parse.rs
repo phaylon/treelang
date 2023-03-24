@@ -1,6 +1,9 @@
 use smol_str::SmolStr;
 
-use crate::{Tree, Span, Offset, Item, Node, NodeKind, ItemKind, Statement, Directive, Section, SourceContext};
+use crate::{
+    Tree, Span, Offset, Item, Node, NodeKind, ItemKind, Statement, Directive,
+    SectionDisplay, SourceContext,
+};
 
 use self::input::Input;
 
@@ -31,11 +34,13 @@ mod token {
     ];
 }
 
+/// Type alias for [`Result`] with [`ParseError`].
 pub type ParseResult<T = ()> = Result<T, ParseError>;
 
 type GroupWrapper = fn(Vec<Item>) -> ItemKind;
 type Group = (char, char, GroupWrapper);
 
+/// Errors encountered during [`Tree::parse`].
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
     #[error("Invalid indentation characters on line {}", span.line_number())]
@@ -57,19 +62,20 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    pub fn section<'a>(&self, source: &'a str) -> Section<'a> {
+    /// Produce the corresponding [`SectionDisplay`] for the error.
+    pub fn section_display<'a>(&self, source: &'a str) -> SectionDisplay<'a> {
         match *self {
             Self::IndentChars { span } |
             Self::InvalidInt { span, .. } |
             Self::InvalidFloat { span, .. } => {
-                source.span_section(span)
+                source.span_section_display(span)
             },
             Self::IndentDepth { offset } |
             Self::StatementWithChild { child_offset: offset } |
             Self::UnexpectedChar { offset, .. } |
             Self::UnclosedGroup { open_offset: offset, .. } |
             Self::EmptyDirectiveSignature { offset } => {
-                source.offset_section(offset)
+                source.offset_section_display(offset)
             },
         }
     }
@@ -255,16 +261,21 @@ impl DepthStack {
     }
 }
 
+/// Indentation setting for [`Tree::parse`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Indent {
     width: IndentWidth,
 }
 
 impl Indent {
+    /// Indentation by a single tab character.
     pub fn tabs() -> Self {
         Self { width: IndentWidth::Tabs }
     }
 
+    /// Indentation by `count` spaces.
+    ///
+    /// Returns `None` if the number of spaces is 0.
     pub fn spaces(count: u8) -> Option<Self> {
         (count > 0).then_some(Self { width: IndentWidth::Spaces(count) })
     }

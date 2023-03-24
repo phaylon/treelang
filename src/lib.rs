@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 use smol_str::SmolStr;
 
 pub use source::*;
@@ -7,12 +8,14 @@ pub use parse::*;
 mod source;
 mod parse;
 
+/// A collection of [`Node`] roots.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Tree {
     pub roots: Vec<Node>,
 }
 
 impl Tree {
+    /// Try to parse a tree from a `&str` assuming the given [`Indent`].
     pub fn parse(content: &str, indent: Indent) -> ParseResult<Self> {
         parse_str(content, indent)
     }
@@ -32,6 +35,10 @@ impl std::ops::DerefMut for Tree {
     }
 }
 
+/// Source code normalization for tests and dynamic inputs.
+///
+/// Empty lines are removed, while non-empty lines are reduced to the content after the first
+/// `lead` character.
 pub fn normalize_source(lead: char, content: &str) -> Result<String, &str> {
     let mut normalized = String::new();
     'lines: for line in content.lines() {
@@ -80,6 +87,7 @@ macro_rules! fn_enum_variant_access {
     }
 }
 
+/// A parsed node in a [`Tree`] with a specific [`NodeKind`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     pub kind: NodeKind,
@@ -87,6 +95,9 @@ pub struct Node {
 }
 
 impl Node {
+    /// Get a slice of children independent of the [`NodeKind`].
+    ///
+    /// Statements will produce an empty slice.
     pub fn children(&self) -> &[Self] {
         match &self.kind {
             NodeKind::Directive(directive) => &directive.children,
@@ -103,6 +114,7 @@ impl std::ops::Deref for Node {
     }
 }
 
+/// Data for a [`NodeKind::Directive`] in a [`Tree`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Directive {
     pub signature: Vec<Item>,
@@ -110,11 +122,13 @@ pub struct Directive {
     pub children: Vec<Node>,
 }
 
+/// Data for a [`NodeKind::Statement`] in a [`Tree`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Statement {
     pub signature: Vec<Item>,
 }
 
+/// The different kinds of [`Node`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeKind {
     Directive(Directive),
@@ -132,6 +146,7 @@ impl NodeKind {
     fn_enum_variant_access!(statement -> &Statement, Self::Statement(statement) => statement);
 }
 
+/// An item of [`ItemKind`] found in a [`Statement`] or [`Directive`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Item {
     pub kind: ItemKind,
@@ -146,6 +161,7 @@ impl std::ops::Deref for Item {
     }
 }
 
+/// The different kinds of [`Item`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum ItemKind {
     Word(SmolStr),
