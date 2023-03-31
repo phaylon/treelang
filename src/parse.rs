@@ -269,15 +269,29 @@ pub struct Indent {
 
 impl Indent {
     /// Indentation by a single tab character.
-    pub fn tabs() -> Self {
+    pub const fn tabs() -> Self {
         Self { width: IndentWidth::Tabs }
     }
 
     /// Indentation by `count` spaces.
     ///
     /// Returns `None` if the number of spaces is 0.
-    pub fn spaces(count: u8) -> Option<Self> {
-        (count > 0).then_some(Self { width: IndentWidth::Spaces(count) })
+    pub const fn try_spaces(count: u8) -> Option<Self> {
+        if count > 0 {
+            Some(Self { width: IndentWidth::Spaces(count) })
+        } else {
+            None
+        }
+    }
+
+    /// Indentation by `count` spaces.
+    ///
+    /// Panics if the number of spaces is 0.
+    pub const fn spaces(count: u8) -> Self {
+        if count == 0 {
+            panic!("zero-width indentation specified");
+        }
+        Self { width: IndentWidth::Spaces(count) }
     }
 }
 

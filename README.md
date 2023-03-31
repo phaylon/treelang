@@ -15,7 +15,7 @@ directive a: b
     statement x 42
 ";
 
-let indent = Indent::spaces(2).unwrap();
+let indent = Indent::try_spaces(2).unwrap();
 let result = Tree::parse(source, indent);
 
 assert!(result.is_ok());

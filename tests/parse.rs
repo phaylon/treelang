@@ -13,7 +13,7 @@ fn normalize(content: &str) -> String {
 }
 
 fn parse(content: &str) -> ParseResult<Tree> {
-    Tree::parse(content, Indent::spaces(2).unwrap())
+    Tree::parse(content, Indent::try_spaces(2).unwrap())
 }
 
 macro_rules! assert_parsed {
@@ -361,8 +361,8 @@ fn braces() {
 
 #[test]
 fn indents() {
-    assert_matches!(Indent::spaces(0), None);
-    assert_matches!(Indent::spaces(2), Some(_));
+    assert_matches!(Indent::try_spaces(0), None);
+    assert_matches!(Indent::try_spaces(2), Some(_));
 }
 
 #[test]
