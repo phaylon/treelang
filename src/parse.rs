@@ -79,6 +79,24 @@ impl ParseError {
             },
         }
     }
+
+    /// The relevant [`Offset`] of the error.
+    pub fn offset(&self) -> Offset {
+        match *self {
+            Self::IndentChars { span } |
+            Self::InvalidInt { span, .. } |
+            Self::InvalidFloat { span, .. } => {
+                span.offset()
+            },
+            Self::IndentDepth { offset } |
+            Self::StatementWithChild { child_offset: offset } |
+            Self::UnexpectedChar { offset, .. } |
+            Self::UnclosedGroup { open_offset: offset, .. } |
+            Self::EmptyDirectiveSignature { offset } => {
+                offset
+            },
+        }
+    }
 }
 
 pub(crate) fn parse_str(content: &str, indent: Indent) -> ParseResult<Tree> {
