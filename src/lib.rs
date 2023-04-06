@@ -1,11 +1,10 @@
 #![doc = include_str!("../README.md")]
 use smol_str::SmolStr;
 
-pub use source::*;
 pub use parse::*;
+use src_ctx::{Input, Offset, Span};
 
 
-mod source;
 mod parse;
 
 /// A collection of [`Node`] roots.
@@ -16,8 +15,8 @@ pub struct Tree {
 
 impl Tree {
     /// Try to parse a tree from a `&str` assuming the given [`Indent`].
-    pub fn parse(content: &str, indent: Indent) -> ParseResult<Self> {
-        parse_str(content, indent)
+    pub fn parse(input: Input<'_>, indent: Indent) -> ParseResult<Self> {
+        parse_input(input, indent)
     }
 }
 
@@ -33,26 +32,6 @@ impl std::ops::DerefMut for Tree {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.roots
     }
-}
-
-/// Source code normalization for tests and dynamic inputs.
-///
-/// Empty lines are removed, while non-empty lines are reduced to the content after the first
-/// `lead` character.
-pub fn normalize_source(lead: char, content: &str) -> Result<String, &str> {
-    let mut normalized = String::new();
-    'lines: for line in content.lines() {
-        if line.trim_start().is_empty() {
-            continue 'lines;
-        }
-        let Some(index) = line.find(lead) else {
-            return Err(line);
-        };
-        let line = &line[(index + lead.len_utf8())..];
-        normalized.push_str(line);
-        normalized.push('\n');
-    }
-    Ok(normalized)
 }
 
 macro_rules! fn_enum_is_variant {

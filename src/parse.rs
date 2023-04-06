@@ -1,11 +1,11 @@
 use smol_str::SmolStr;
+use src_ctx::{Input, SourceError, Offset};
 
 use crate::{
-    Tree, Span, Offset, Item, Node, NodeKind, ItemKind, Statement, Directive,
-    SectionDisplay, SourceContext,
+    Tree, Item, Node, NodeKind, ItemKind, Statement, Directive,
 };
 
-use self::input::Input;
+use self::input::InputExt;
 
 
 mod input;
@@ -35,7 +35,7 @@ mod token {
 }
 
 /// Type alias for [`Result`] with [`ParseError`].
-pub type ParseResult<T = ()> = Result<T, ParseError>;
+pub type ParseResult<T = ()> = Result<T, SourceError<ParseError>>;
 
 type GroupWrapper = fn(Vec<Item>) -> ItemKind;
 type Group = (char, char, GroupWrapper);
@@ -43,65 +43,27 @@ type Group = (char, char, GroupWrapper);
 /// Errors encountered during [`Tree::parse`].
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ParseError {
-    #[error("Invalid indentation characters on line {}", span.line_number())]
-    IndentChars { span: Span },
-    #[error("Invalid indentation depth on line {}", offset.line_number())]
-    IndentDepth { offset: Offset },
-    #[error("Child node attached to statement on line {}", child_offset.line_number())]
-    StatementWithChild { child_offset: Offset },
-    #[error("Unexpected character `{unexpected}` on line {}", offset.line_number())]
-    UnexpectedChar { offset: Offset, unexpected: char },
-    #[error("Missing closing `{missing}` character on line {}", open_offset.line_number())]
-    UnclosedGroup { open_offset: Offset, missing: char },
-    #[error("Invalid integer format `{value}` on line {}", span.line_number())]
-    InvalidInt { span: Span, value: SmolStr },
-    #[error("Invalid floating point format `{value}` on line {}", span.line_number())]
-    InvalidFloat { span: Span, value: SmolStr },
-    #[error("Empty directive signature on line {}", offset.line_number())]
-    EmptyDirectiveSignature { offset: Offset },
+    #[error("Invalid indentation characters")]
+    IndentChars,
+    #[error("Invalid indentation depth")]
+    IndentDepth,
+    #[error("Statement has an unexpected child node")]
+    StatementWithChild,
+    #[error("Unexpected character `{unexpected}`")]
+    UnexpectedChar { unexpected: char },
+    #[error("Missing closing `{missing}` character")]
+    UnclosedGroup { missing: char },
+    #[error("Invalid integer format `{value}`")]
+    InvalidInt { value: SmolStr },
+    #[error("Invalid floating point format `{value}`")]
+    InvalidFloat { value: SmolStr },
+    #[error("Empty directive signature")]
+    EmptyDirectiveSignature,
 }
 
-impl ParseError {
-    /// Produce the corresponding [`SectionDisplay`] for the error.
-    pub fn section_display<'a>(&self, source: &'a str) -> SectionDisplay<'a> {
-        match *self {
-            Self::IndentChars { span } |
-            Self::InvalidInt { span, .. } |
-            Self::InvalidFloat { span, .. } => {
-                source.span_section_display(span)
-            },
-            Self::IndentDepth { offset } |
-            Self::StatementWithChild { child_offset: offset } |
-            Self::UnexpectedChar { offset, .. } |
-            Self::UnclosedGroup { open_offset: offset, .. } |
-            Self::EmptyDirectiveSignature { offset } => {
-                source.offset_section_display(offset)
-            },
-        }
-    }
-
-    /// The relevant [`Offset`] of the error.
-    pub fn offset(&self) -> Offset {
-        match *self {
-            Self::IndentChars { span } |
-            Self::InvalidInt { span, .. } |
-            Self::InvalidFloat { span, .. } => {
-                span.offset()
-            },
-            Self::IndentDepth { offset } |
-            Self::StatementWithChild { child_offset: offset } |
-            Self::UnexpectedChar { offset, .. } |
-            Self::UnclosedGroup { open_offset: offset, .. } |
-            Self::EmptyDirectiveSignature { offset } => {
-                offset
-            },
-        }
-    }
-}
-
-pub(crate) fn parse_str(content: &str, indent: Indent) -> ParseResult<Tree> {
+pub(crate) fn parse_input(input: Input<'_>, indent: Indent) -> ParseResult<Tree> {
     let mut stack = DepthStack::default();
-    let mut input = Some(Input::new(content));
+    let mut input = Some(input);
     while let Some(current) = input.take() {
         let (line, rest) = current.split_line();
         input = rest;
@@ -130,9 +92,13 @@ fn parse_node(mut input: Input<'_>) -> ParseResult<Node> {
                         signature: items,
                     }),
                 })
-            } else if let Some(rest) = input.try_skip_char(':') {
+            } else if let Some(rest) = input.skip_char(':') {
                 if items.is_empty() {
-                    Err(ParseError::EmptyDirectiveSignature { offset: node_offset })
+                    Err(SourceError::new(
+                        ParseError::EmptyDirectiveSignature,
+                        node_offset,
+                        "empty directive",
+                    ))
                 } else {
                     let arguments = parse_all_items(rest)?;
                     Ok(Node {
@@ -164,8 +130,12 @@ fn parse_items_until(
         input = input.skip_whitespace_and_comments();
         return {
             if input.is_empty() {
-                Err(ParseError::UnclosedGroup { open_offset, missing: end })
-            } else if let Some(rest) = input.try_skip_char(end) {
+                Err(SourceError::new(
+                    ParseError::UnclosedGroup { missing: end },
+                    open_offset,
+                    "opened here",
+                ))
+            } else if let Some(rest) = input.skip_char(end) {
                 Ok((items, rest))
             } else {
                 let (item, rest) = parse_item(input)?;
@@ -197,37 +167,47 @@ fn parse_all_items(mut input: Input<'_>) -> ParseResult<Vec<Item>> {
 fn parse_item(input: Input<'_>) -> ParseResult<(Item, Input<'_>)> {
     if let Some((rest, (_, close, wrap_kind))) = try_skip_group_open(&input) {
         let (items, rest) = parse_items_until(rest, close, input.offset())?;
-        Ok((Item { location: input.offset().span(1), kind: wrap_kind(items) }, rest))
+        let location = input.offset().span(input.skip(1).offset());
+        Ok((Item { location, kind: wrap_kind(items) }, rest))
     } else if let Some((value, span, rest)) = input.try_take_chars(|c| !is_structure_char(c)) {
         if value.starts_with(|c: char| c.is_ascii_digit()) || value.starts_with('-') {
             if value.contains('.') {
                 if let Some(value) = value.parse().ok() {
                     Ok((Item { location: span, kind: ItemKind::Float(value) }, rest))
                 } else {
-                    Err(ParseError::InvalidFloat { value: value.into(), span })
+                    Err(SourceError::new(
+                        ParseError::InvalidFloat { value: value.into() },
+                        span.start(),
+                        "expected valid float",
+                    ))
                 }
             } else {
                 if let Some(value) = value.parse().ok() {
                     Ok((Item { location: span, kind: ItemKind::Int(value) }, rest))
                 } else {
-                    Err(ParseError::InvalidInt { value: value.into(), span })
+                    Err(SourceError::new(
+                        ParseError::InvalidInt { value: value.into() },
+                        span.start(),
+                        "expected valid int",
+                    ))
                 }
             }
         } else {
             Ok((Item { location: span, kind: ItemKind::Word(value.into()) }, rest))
         }
     } else {
-        Err(ParseError::UnexpectedChar {
-            offset: input.offset(),
-            unexpected: input.next_char().expect("empty input reached `parse_item`"),
-        })
+        Err(SourceError::new(
+            ParseError::UnexpectedChar { unexpected: input.char().unwrap() },
+            input.offset(),
+            "parse error",
+        ))
     }
 }
 
 fn try_skip_group_open<'a>(input: &Input<'a>) -> Option<(Input<'a>, Group)> {
     for &group in token::PAIRS {
         let (open, ..) = group;
-        if let Some(rest) = input.try_skip_char(open) {
+        if let Some(rest) = input.skip_char(open) {
             return Some((rest, group));
         }
     }
@@ -253,7 +233,15 @@ impl DepthStack {
     fn insert(&mut self, depth: usize, node: Node) -> ParseResult {
         self.vacate_level(depth)?;
         if depth != self.levels.len() {
-            return Err(ParseError::IndentDepth { offset: node.location });
+            let mut error = SourceError::new(
+                ParseError::IndentDepth,
+                node.location,
+                "invalid indentation",
+            );
+            if let Some(nearest) = self.levels.last() {
+                error = error.with_context(nearest.location);
+            }
+            return Err(error);
         }
         self.levels.push(node);
         Ok(())
@@ -268,7 +256,13 @@ impl DepthStack {
                         children.push(node);
                     },
                     NodeKind::Statement(_) => {
-                        return Err(ParseError::StatementWithChild { child_offset: node.location });
+                        let error = SourceError::new(
+                            ParseError::StatementWithChild,
+                            node.location,
+                            "child node",
+                        );
+                        let error = error.with_context(parent.location);
+                        return Err(error);
                     },
                 }
             } else {
@@ -323,8 +317,14 @@ impl Indent {
     fn try_deindent<'a>(&self, line: Input<'a>) -> Option<Input<'a>> {
         use IndentWidth::*;
         match self.width {
-            Tabs => line.try_skip_char('\t'),
-            Spaces(n) => line.try_skip_char_sequence(std::iter::repeat(' ').take(n.into())),
+            Tabs => line.skip_char('\t'),
+            Spaces(n) => {
+                let mut line = line;
+                for _ in 0..n {
+                    line = line.skip_char(' ')?;
+                }
+                Some(line)
+            },
         }
     }
 
@@ -334,8 +334,12 @@ impl Indent {
             depth += 1;
             line = rest;
         }
-        if let Some(span) = line.leading_whitespace_span() {
-            Err(ParseError::IndentChars { span })
+        if line.content().starts_with(|c: char| c.is_whitespace()) {
+            Err(SourceError::new(
+                ParseError::IndentChars,
+                line.offset(),
+                "non-indentation whitespace",
+            ))
         } else {
             Ok((depth, line))
         }

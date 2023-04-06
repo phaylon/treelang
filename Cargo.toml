@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 assert_matches = "1.5.0"
 smol_str = "0.1.24"
+src-ctx = { git = "https://github.com/phaylon/src-ctx", version = "0.1.0" }
 thiserror = "1.0.40"
