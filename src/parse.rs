@@ -72,6 +72,10 @@ pub(crate) fn parse_input(input: Input<'_>, indent: Indent) -> ParseResult<Tree>
             continue;
         }
 
+        if line.content().trim() == "__END__" {
+            break;
+        }
+
         let (depth, line) = indent.extract(line)?;
         let node = parse_node(line)?;
         stack.insert(depth, node)?;
